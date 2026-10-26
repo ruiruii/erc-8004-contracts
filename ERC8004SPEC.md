@@ -301,6 +301,22 @@ This emits:
 event FeedbackRevoked(uint256 indexed agentId, address indexed clientAddress, uint64 indexed feedbackIndex)
 ```
 
+#### Worked Example: Binding-Time Grounding
+
+When a feedback entry references an on-chain payment (e.g., via `proofOfPayment.txHash` in the off-chain feedback file), an off-chain consumer must decide **which wallet binding is authoritative when matching the payment to the agent's wallet**. Because the Identity Registry permits the owner to rebind `agentWallet` at any time, three readings are possible:
+
+- **Payment reading** — the binding at the payment transaction's block.
+- **Feedback reading** — the binding at the feedback transaction's block.
+- **Now reading** — the current binding.
+
+These three readings can diverge. The following live recordings on Base Sepolia (chain id 84532) demonstrate both divergence shapes; the full discussion is in [issue #99](https://github.com/erc-8004/erc-8004-contracts/issues/99).
+
+**Case 2 — payment before registration.** A USDC payment (tx `0xbd97b92c32ac8a218d19272658d5ad67b03d03396701d62a4a498e421aaaa60b`) was made *before* the agent existed. The agent was then registered (agentId `10419`), its wallet bound to W1, and feedback referencing the payment was submitted (tx `0x9759e77075505c9b2d9b25481cf2c1aa670af05a30329f795d9bfb5f495d6048`). Under the payment reading there was no binding at the payment block, so the payment is *not* attributable to W1; an implementer that reads the binding at feedback time instead would wrongly ground it.
+
+**Case 3 — wallet rebound after feedback.** Agent `10420` was registered and bound to W1; a payment (tx `0x0f69594fd2358184cadc81f9e2143036aec9b6dc0708c59aa2b5317713e4d51e`) and feedback (tx `0x177a09a7c8c42678586bfa91773a87b1c1f78bd5d217c28539bce853e36d94a3`) referencing it were submitted; the owner then rebound `agentWallet` to W2. The payment and feedback readings ground the payment to W1; the now reading grounds it to W2. Any off-chain aggregation that caches a grounding result MUST re-evaluate it on rebind, or it will permanently attribute the payment to the wrong wallet.
+
+An implementation that wants a single, stable answer SHOULD ground at the feedback block: it reflects the binding the agent had committed to when the feedback was given, and it is reproducible by any later auditor replaying the chain.
+
 #### Appending Responses
 
 Anyone (e.g., the *agentId* showing a refund, any off-chain data intelligence aggregator tagging feedback as spam) can call:
